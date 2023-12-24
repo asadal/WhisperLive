@@ -284,11 +284,7 @@ class WhisperModel:
                 self.logger.debug(
                     "VAD filter kept the following audio segments: %s",
                     ", ".join(
-                        "[%s -> %s]"
-                        % (
-                            format_timestamp(chunk["start"] / sampling_rate),
-                            format_timestamp(chunk["end"] / sampling_rate),
-                        )
+                        f'[{format_timestamp(chunk["start"] / sampling_rate)} -> {format_timestamp(chunk["end"] / sampling_rate)}]'
                         for chunk in speech_chunks
                     ),
                 )
@@ -298,9 +294,9 @@ class WhisperModel:
 
         features = self.feature_extractor(audio)
 
-        encoder_output = None
         all_language_probs = None
 
+        encoder_output = None
         if language is None:
             if not self.model.is_multilingual:
                 language = "en"
@@ -324,8 +320,7 @@ class WhisperModel:
         else:
             if not self.model.is_multilingual and language != "en":
                 self.logger.warning(
-                    "The current model is English-only but the language parameter is set to '%s'; "
-                    "using 'en' instead." % language
+                    f"The current model is English-only but the language parameter is set to '{language}'; using 'en' instead."
                 )
                 language = "en"
 
@@ -396,7 +391,7 @@ class WhisperModel:
 
         if options.initial_prompt is not None:
             if isinstance(options.initial_prompt, str):
-                initial_prompt = " " + options.initial_prompt.strip()
+                initial_prompt = f" {options.initial_prompt.strip()}"
                 initial_prompt_tokens = tokenizer.encode(initial_prompt)
                 all_tokens.extend(initial_prompt_tokens)
             else:
@@ -468,15 +463,13 @@ class WhisperModel:
                 and tokens[-1] >= tokenizer.timestamp_begin
             )
 
-            consecutive_timestamps = [
+            if consecutive_timestamps := [
                 i
                 for i in range(len(tokens))
                 if i > 0
                 and tokens[i] >= tokenizer.timestamp_begin
                 and tokens[i - 1] >= tokenizer.timestamp_begin
-            ]
-
-            if len(consecutive_timestamps) > 0:
+            ]:
                 slices = list(consecutive_timestamps)
                 if single_timestamp_ending:
                     slices.append(len(tokens))
@@ -522,7 +515,7 @@ class WhisperModel:
                 timestamps = [
                     token for token in tokens if token >= tokenizer.timestamp_begin
                 ]
-                if len(timestamps) > 0 and timestamps[-1] != tokenizer.timestamp_begin:
+                if timestamps and timestamps[-1] != tokenizer.timestamp_begin:
                     last_timestamp_position = timestamps[-1] - tokenizer.timestamp_begin
                     duration = last_timestamp_position * self.time_precision
 
@@ -551,9 +544,9 @@ class WhisperModel:
                 word_end_timestamps = [
                     w["end"] for s in current_segments for w in s["words"]
                 ]
-                if len(word_end_timestamps) > 0:
+                if word_end_timestamps:
                     last_speech_timestamp = word_end_timestamps[-1]
-                if not single_timestamp_ending and len(word_end_timestamps) > 0:
+                if not single_timestamp_ending and word_end_timestamps:
                     seek_shift = round(
                         (word_end_timestamps[-1] - time_offset) * self.frames_per_second
                     )
@@ -738,7 +731,7 @@ class WhisperModel:
             prompt.append(tokenizer.no_timestamps)
 
         if prefix:
-            prefix_tokens = tokenizer.encode(" " + prefix.strip())
+            prefix_tokens = tokenizer.encode(f" {prefix.strip()}")
             if len(prefix_tokens) >= self.max_length // 2:
                 prefix_tokens = prefix_tokens[: self.max_length // 2 - 1]
             if not without_timestamps:
@@ -757,7 +750,7 @@ class WhisperModel:
         append_punctuations: str,
         last_speech_timestamp: float,
     ) -> None:
-        if len(segments) == 0:
+        if not segments:
             return
 
         text_tokens_per_segment = [
@@ -819,7 +812,7 @@ class WhisperModel:
 
             # hack: truncate long words at segment boundaries.
             # a better segmentation algorithm based on VAD should be able to replace this.
-            if len(words) > 0:
+            if words:
                 # ensure the first and second word after a pause is not longer than
                 # twice the median word duration.
                 if words[0]["end"] - last_speech_timestamp > median_duration * 4 and (
@@ -873,7 +866,7 @@ class WhisperModel:
         num_frames: int,
         median_filter_width: int = 7,
     ) -> List[dict]:
-        if len(text_tokens) == 0:
+        if not text_tokens:
             return []
 
         result = self.model.align(

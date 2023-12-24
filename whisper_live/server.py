@@ -218,19 +218,19 @@ class ServeClient:
         self.language = language if self.multilingual else "en"
         self.task = task
         self.websocket = websocket
-        
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        if self.model_size == None:
+
+        if self.model_size is None:
             return
-        
+
         self.transcriber = WhisperModel(
             self.model_size, 
             device=device,
             compute_type="int8" if device=="cpu" else "float16", 
             local_files_only=False,
         )
-        
+
         self.timestamp_offset = 0.0
         self.frames_np = None
         self.frames_offset = 0.0
@@ -276,13 +276,13 @@ class ServeClient:
                 )
             )
             return None
-        
+
         if model_size == "large-v2":
             self.multilingual = True
             return model_size
 
         if not self.multilingual:
-            model_size = model_size + ".en"
+            model_size = f"{model_size}.en"
 
         return model_size
     
@@ -331,7 +331,7 @@ class ServeClient:
             if self.exit:
                 logging.info("Exiting speech to text thread")
                 break
-            
+
             if self.frames_np is None: 
                 continue
 
@@ -340,7 +340,7 @@ class ServeClient:
             if self.frames_np[int((self.timestamp_offset - self.frames_offset)*self.RATE):].shape[0] > 25 * self.RATE:
                 duration = self.frames_np.shape[0] / self.RATE
                 self.timestamp_offset = self.frames_offset + duration - 5
-    
+
             samples_take = max(0, (self.timestamp_offset - self.frames_offset)*self.RATE)
             input_bytes = self.frames_np[int(samples_take):].copy()
             duration = input_bytes.shape[0] / self.RATE
@@ -348,7 +348,7 @@ class ServeClient:
                 continue
             try:
                 input_sample = input_bytes.copy()
-                
+
                 # whisper transcribe with prompt
                 result, info = self.transcriber.transcribe(
                     input_sample, 
@@ -360,15 +360,14 @@ class ServeClient:
                 )
 
                 if self.language is None:
-                    if info.language_probability > 0.5:
-                        self.language = info.language
-                        logging.info(f"Detected language {self.language} with probability {info.language_probability}")
-                        self.websocket.send(json.dumps(
-                            {"uid": self.client_uid, "language": self.language, "language_prob": info.language_probability}))
-                    else:
+                    if info.language_probability <= 0.5:
                         # detect language again
                         continue
 
+                    self.language = info.language
+                    logging.info(f"Detected language {self.language} with probability {info.language_probability}")
+                    self.websocket.send(json.dumps(
+                        {"uid": self.client_uid, "language": self.language, "language_prob": info.language_probability}))
                 if len(result):
                     self.t_start = None
                     last_segment = self.update_segments(result, duration)
@@ -377,7 +376,7 @@ class ServeClient:
                     else:
                         segments = self.transcript[-self.send_last_n_segments:]
                     if last_segment is not None:
-                        segments = segments + [last_segment]                    
+                        segments = segments + [last_segment]
                 else:
                     # show previous output if there is pause i.e. no output from whisper
                     segments = []
@@ -387,10 +386,9 @@ class ServeClient:
                             segments = self.transcript
                         else:
                             segments = self.transcript[-self.send_last_n_segments:]
-                    
-                    # add a blank if there is no speech for 3 seconds
-                    if len(self.text) and self.text[-1] != '':
-                        if time.time() - self.t_start > self.add_pause_thresh:
+
+                    if time.time() - self.t_start > self.add_pause_thresh:
+                        if len(self.text) and self.text[-1] != '':
                             self.text.append('')
 
                 try:
@@ -433,7 +431,7 @@ class ServeClient:
         last_segment = None
         # process complete segments
         if len(segments) > 1:
-            for i, s in enumerate(segments[:-1]):
+            for s in segments[:-1]:
                 text_ = s.text
                 self.text.append(text_)
                 start, end = self.timestamp_offset + s.start, self.timestamp_offset + min(duration, s.end)
@@ -444,7 +442,7 @@ class ServeClient:
                         'text': text_
                     }
                 )
-                
+
                 offset = min(duration, s.end)
 
         self.current_out += segments[-1].text
@@ -453,14 +451,14 @@ class ServeClient:
             'end': self.timestamp_offset + min(duration, segments[-1].end),
             'text': self.current_out
         }
-        
+
         # if same incomplete segment is seen multiple times then update the offset
         # and append the segment to the list
         if self.current_out.strip() == self.prev_out.strip() and self.current_out != '': 
             self.same_output_threshold += 1
         else: 
             self.same_output_threshold = 0
-        
+
         if self.same_output_threshold > 5:
             if not len(self.text) or self.text[-1].strip().lower()!=self.current_out.strip().lower():          
                 self.text.append(self.current_out)
@@ -477,7 +475,7 @@ class ServeClient:
             last_segment = None
         else:
             self.prev_out = self.current_out
-        
+
         # update offset
         if offset is not None:
             self.timestamp_offset += offset
